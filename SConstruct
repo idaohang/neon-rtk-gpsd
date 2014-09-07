@@ -347,10 +347,7 @@ if not 'CCFLAGS' in os.environ:
         env.Append(CCFLAGS=['-O2'])
     
     # Take advantage of the hardware available on the Beaglebone Black
-    env.Append(CCFLAGS=['-march=armv7-a'])
-    env.Append(CCFLAGS=['-mtune=cortex-a8'])
-    env.Append(CCFLAGS=['-mfloat-abi=hard'])
-    env.Append(CCFLAGS=['-mfpu=neon'])
+    env.Append(CCFLAGS=['-march=armv7-a -mtune=cortex-a8 -mfloat-abi=hard -mfpu=neon'])
 
 # Get a slight speedup by not doing automatic RCS and SCCS fetches.
 env.SourceCode('.', None)
