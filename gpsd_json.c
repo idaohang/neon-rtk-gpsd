@@ -131,10 +131,6 @@ void json_tpv_dump(const struct gps_device_t *session,
 
     assert(replylen > 2);
     (void)strlcpy(reply, "{\"class\":\"TPV\",", replylen);
-    (void)snprintf(reply + strlen(reply),
-		   replylen - strlen(reply),
-		   "\"tag\":\"%s\",",
-		   gpsdata->tag[0] != '\0' ? gpsdata->tag : "-");
     if (gpsdata->dev.path[0] != '\0')
 	(void)snprintf(reply + strlen(reply),
 		       replylen - strlen(reply),
@@ -246,10 +242,6 @@ void json_noise_dump(const struct gps_data_t *gpsdata,
 
     assert(replylen > 2);
     (void)strlcpy(reply, "{\"class\":\"GST\",", replylen);
-    (void)snprintf(reply + strlen(reply),
-		   replylen - strlen(reply),
-		   "\"tag\":\"%s\",",
-		   gpsdata->tag[0] != '\0' ? gpsdata->tag : "-");
     if (gpsdata->dev.path[0] != '\0')
 	(void)snprintf(reply + strlen(reply),
 		       replylen - strlen(reply),
@@ -287,10 +279,6 @@ void json_sky_dump(const struct gps_data_t *datap,
 
     assert(replylen > 2);
     (void)strlcpy(reply, "{\"class\":\"SKY\",", replylen);
-    (void)snprintf(reply + strlen(reply),
-		   replylen - strlen(reply),
-		   "\"tag\":\"%s\",",
-		   datap->tag[0] != '\0' ? datap->tag : "-");
     if (datap->dev.path[0] != '\0')
 	(void)snprintf(reply + strlen(reply),
 		       replylen - strlen(reply),
@@ -434,15 +422,14 @@ void json_watch_dump(const struct policy_t *ccp,
 {
     /*@-compdef@*/
     (void)snprintf(reply, replylen,
-		   "{\"class\":\"WATCH\",\"enable\":%s,\"json\":%s,\"nmea\":%s,\"raw\":%d,\"scaled\":%s,\"timing\":%s,\"split24\":%s,\"pps\":%s,",
+		   "{\"class\":\"WATCH\",\"enable\":%s,\"json\":%s,\"nmea\":%s,\"raw\":%d,\"scaled\":%s,\"timing\":%s,\"split24\":%s,",
 		   ccp->watcher ? "true" : "false",
 		   ccp->json ? "true" : "false",
 		   ccp->nmea ? "true" : "false",
 		   ccp->raw,
 		   ccp->scaled ? "true" : "false",
 		   ccp->timing ? "true" : "false",
-		   ccp->split24 ? "true" : "false",
-		   ccp->pps ? "true" : "false");
+		   ccp->split24 ? "true" : "false");
     if (ccp->devpath[0] != '\0')
 	(void)snprintf(reply + strlen(reply), replylen - strlen(reply),
 		       "\"device\":\"%s\",", ccp->devpath);
@@ -1384,7 +1371,6 @@ void json_aivdm_dump(const struct ais_t *ais,
     char buf2[JSON_VAL_MAX * 2 + 1];
     char buf3[JSON_VAL_MAX * 2 + 1];
     char scratchbuf[MAX_PACKET_LENGTH*2+1];
-    bool structured;
     int i;
 
     static char *nav_legends[] = {
@@ -1888,7 +1874,16 @@ void json_aivdm_dump(const struct ais_t *ais,
 		       JSON_BOOL(ais->type6.retransmit),
 		       ais->type6.dac,
 		       ais->type6.fid);
-	structured = false;
+	if (!ais->type6.structured) {
+	    (void)snprintf(buf + strlen(buf), buflen - strlen(buf),
+			   "\"data\":\"%zd:%s\"}\r\n",
+			   ais->type6.bitcount,
+			   json_stringify(buf1, sizeof(buf1),
+					  gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
+					      (char *)ais->type6.bitdata,
+					      (ais->type6.bitcount + 7) / 8)));
+	    break;
+	}
 	if (ais->type6.dac == 200) {
 	    switch (ais->type6.fid) {
 	    case 21:
@@ -1980,7 +1975,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf) - 1] == ',')
 		    buf[strlen(buf)-1] = '\0';
 		(void)strlcat(buf, "}\r\n", buflen);
-		structured = true;
 		break;
 	    }
 	}
@@ -2013,18 +2007,15 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       ais->type6.dac1fid12.unid,
 			       ais->type6.dac1fid12.amount,
 			       ais->type6.dac1fid12.unit);
-		structured = true;
 		break;
 	    case 15:	/* IMO236 - Extended Ship Static and Voyage Related Data */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 		    "\"airdraught\":%u}\r\n",
 		    ais->type6.dac1fid15.airdraught);
-		structured = true;
 		break;
 	    case 16:	/* IMO236 - Number of persons on board */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 			       "\"persons\":%u}\t\n", ais->type6.dac1fid16.persons);
-		structured = true;
 		break;
 	    case 18:	/* IMO289 - Clearance time to enter port */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2048,7 +2039,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       "\"lon\":%d,\"lat\":%d}\r\n",
 			       ais->type6.dac1fid18.lon,
 			       ais->type6.dac1fid18.lat);
-		structured = true;
 		break;
 	    case 20:        /* IMO289 - Berthing Data */
                 (void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2121,7 +2111,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       ais->type6.dac1fid20.berth_lon,
 			       ais->type6.dac1fid20.berth_lat,
 			       ais->type6.dac1fid20.berth_depth);
-		structured = true;
 		break;
 	    case 23:    /* IMO289 - Area notice - addressed */
 		break;
@@ -2139,7 +2128,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf) - 1] == ',')
 		    buf[strlen(buf) - 1] = '\0';
 		(void)strlcat(buf, "]}\r\n", buflen);
-		structured = true;
 		break;
 	    case 28:	/* IMO289 - Route info - addressed */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2172,7 +2160,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf) - 1] == ',')
 		    buf[strlen(buf)-1] = '\0';
 		(void)strlcat(buf, "]}\r\n", buflen);
-		structured = true;
 		break;
 	    case 30:	/* IMO289 - Text description - addressed */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2180,7 +2167,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		       ais->type6.dac1fid30.linkage,
 		       json_stringify(buf1, sizeof(buf1),
 				      ais->type6.dac1fid30.text));
-		structured = true;
 		break;
 	    case 14:	/* IMO236 - Tidal Window */
 	    case 32:	/* IMO289 - Tidal Window */
@@ -2219,18 +2205,9 @@ void json_aivdm_dump(const struct ais_t *ais,
 	      if (buf[strlen(buf) - 1] == ',')
 		  buf[strlen(buf)-1] = '\0';
 	      (void)strlcat(buf, "]}\r\n", buflen);
-	      structured = true;
 	      break;
 	    }
 	}
-	if (!structured)
-	    (void)snprintf(buf + strlen(buf), buflen - strlen(buf),
-			   "\"data\":\"%zd:%s\"}\r\n",
-			   ais->type6.bitcount,
-			   json_stringify(buf1, sizeof(buf1),
-					  gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
-					      (char *)ais->type6.bitdata,
-					      (ais->type6.bitcount + 7) / 8)));
 	break;
     case 7:			/* Binary Acknowledge */
     case 13:			/* Safety Related Acknowledge */
@@ -2240,9 +2217,18 @@ void json_aivdm_dump(const struct ais_t *ais,
 		       ais->type7.mmsi2, ais->type7.mmsi3, ais->type7.mmsi4);
 	break;
     case 8:			/* Binary Broadcast Message */
-	structured = false;
 	(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 		       "\"dac\":%u,\"fid\":%u,",ais->type8.dac, ais->type8.fid);
+	if (!ais->type8.structured) {
+	    (void)snprintf(buf + strlen(buf), buflen - strlen(buf),
+			   "\"data\":\"%zd:%s\"}\r\n",
+			   ais->type8.bitcount,
+			   json_stringify(buf1, sizeof(buf1),
+					  gpsd_hexdump(scratchbuf, sizeof(scratchbuf), 
+						       (char *)ais->type8.bitdata,
+						       (ais->type8.bitcount + 7) / 8)));
+	    break;
+	}
 	if (ais->type8.dac == 1) {
 	    const char *trends[] = {
 		"steady",
@@ -2394,7 +2380,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 				   ais->type8.dac1fid11.ice,
 				   ice[ais->type8.dac1fid11.ice]);
 		(void)strlcat(buf, "}\r\n", buflen);
-		structured = true;
 		break;
 	    case 13:        /* IMO236 - Fairway closed */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2419,18 +2404,15 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       ais->type8.dac1fid13.tday,
 			       ais->type8.dac1fid13.thour,
 			       ais->type8.dac1fid13.tminute);
-		structured = true;
 		break;
 	    case 15:        /* IMO236 - Extended ship and voyage */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 			       "\"airdraught\":%u}\r\n",
 			       ais->type8.dac1fid15.airdraught);
-		structured = true;
 		break;
 	    case 16:	/* IMO289 - Number of persons on board */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 			       "\"persons\":%u}\t\n", ais->type6.dac1fid16.persons);
-		structured = true;
 		break;
 	    case 17:        /* IMO289 - VTS-generated/synthetic targets */
 		(void)strlcat(buf, "\"targets\":[", buflen);
@@ -2485,7 +2467,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf) - 1] == ',')
 		    buf[strlen(buf) - 1] = '\0';
 		(void)strlcat(buf, "]}\r\n", buflen);
-		structured = true;
 		break;
 	    case 19:        /* IMO289 - Marine Traffic Signal */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2508,7 +2489,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       ais->type8.dac1fid19.minute,
 			       ais->type8.dac1fid19.nextsignal,
 			       SIGNAL_DISPLAY(ais->type8.dac1fid19.nextsignal));
-		structured = true;
 		break;
 	    case 21:        /* IMO289 - Weather obs. report from ship */
 		break;
@@ -2549,7 +2529,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf) - 1] == ',')
 		    buf[strlen(buf) - 1] = '\0';
 		(void)strlcat(buf, "]}\r\n", buflen);
-		structured = true;
 		break;
 	    case 29:        /* IMO289 - Text Description - broadcast */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2557,7 +2536,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		       ais->type8.dac1fid29.linkage,
 		       json_stringify(buf1, sizeof(buf1),
 				      ais->type8.dac1fid29.text));
-		structured = true;
 		break;
 	    case 31:        /* IMO289 - Meteorological/Hydrological data */
 		/* some fields have been merged to an ISO8601 partial date */
@@ -2686,7 +2664,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 				   ais->type8.dac1fid31.salinity,
 				   ais->type8.dac1fid31.ice);
 		(void)strlcat(buf, "}\r\n", buflen);
-		structured = true;
 		break;
 	    }
 	}
@@ -2810,7 +2787,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 	    };
 #define STATUS_DISPLAY(n) (((n) < (unsigned int)NITEMS(status_vocabulary)) ? status_vocabulary[n] : "INVALID STATUS")
 
-	    structured = false;
 	    switch (ais->type8.fid) {
 	    case 10:        /* Inland ship static and voyage-related data */
 		for (cp = shiptypes; cp < shiptypes + NITEMS(shiptypes); cp++)
@@ -2818,14 +2794,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 			|| cp->ais == ais->type8.dac200fid10.shiptype
 			|| cp->code == 0)
 			break;
-		/*
-		 * FIXME: AIS struct should have "structured" bit set by driver
-		 * This is a kluge.
-		 */
-		if (cp->code == 0
-		    || ais->type8.dac200fid10.hazard >= NITEMS(hazard_types)
-		    || !isascii(ais->type8.dac200fid10.vin[0]))
-		    break;
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 			       "\"vin\":\"%s\",\"length\":%u,\"beam\":%u,"
 			       "\"shiptype\":%u,\"shiptype_text\":\"%s\","
@@ -2848,14 +2816,9 @@ void json_aivdm_dump(const struct ais_t *ais,
 			       JSON_BOOL(ais->type8.dac200fid10.speed_q),
 			       JSON_BOOL(ais->type8.dac200fid10.course_q),
 			       JSON_BOOL(ais->type8.dac200fid10.heading_q));
-		structured = true;
 		break;
 	    case 23:	/* EMMA warning */
-		/*
-		 * FIXME: AIS struct should have "structured" bit set by driver
-		 * This is a kluge.
-		 */
-		if (ais->type8.dac200fid23.type >= NITEMS(emma_types))
+		if (!ais->type8.structured)
 		    break;
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
 			       "\"start\":\"%4u-%02u-%02uT%02u:%02u\","
@@ -2895,7 +2858,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		    EMMA_CLASS_DISPLAY(ais->type8.dac200fid23.intensity),
 		    ais->type8.dac200fid23.wind,
 		    EMMA_WIND_DISPLAY(ais->type8.dac200fid23.wind));
-		structured = true;
 		break;
 	    case 24:	/* Inland AIS Water Levels */
 		(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -2910,7 +2872,6 @@ void json_aivdm_dump(const struct ais_t *ais,
 		if (buf[strlen(buf)-1] == ',')
 		    buf[strlen(buf)-1] = '\0';
 		(void)strlcat(buf, "]}\r\n", buflen - strlen(buf));
-		structured = true;
 		break;
 	    case 40:	/* Inland AIS Signal Strength */
 		if (scaled)
@@ -2931,18 +2892,9 @@ void json_aivdm_dump(const struct ais_t *ais,
 		    DIRECTION_DISPLAY(ais->type8.dac200fid40.direction),
 		    ais->type8.dac200fid40.status,
 		    STATUS_DISPLAY(ais->type8.dac200fid40.status));
-		structured = true;
 		break;
 	    }
 	}
-	if (!structured)
-	    (void)snprintf(buf + strlen(buf), buflen - strlen(buf),
-			   "\"data\":\"%zd:%s\"}\r\n",
-			   ais->type8.bitcount,
-			   json_stringify(buf1, sizeof(buf1),
-					  gpsd_hexdump(scratchbuf, sizeof(scratchbuf), 
-						       (char *)ais->type8.bitdata,
-						       (ais->type8.bitcount + 7) / 8)));
 	break;
     case 9:			/* Standard SAR Aircraft Position Report */
 	if (scaled) {
@@ -3452,10 +3404,6 @@ void json_att_dump(const struct gps_data_t *gpsdata,
 {
     assert(replylen > 2);
     (void)strlcpy(reply, "{\"class\":\"ATT\",", replylen);
-    (void)snprintf(reply + strlen(reply),
-		   replylen - strlen(reply),
-		   "\"tag\":\"%s\",",
-		   gpsdata->tag[0] != '\0' ? gpsdata->tag : "-");
     (void)snprintf(reply + strlen(reply),
 		   replylen - strlen(reply),
 		   "\"device\":\"%s\",", gpsdata->dev.path);

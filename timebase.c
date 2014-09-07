@@ -9,7 +9,7 @@ GPS week+TOW, but this isn't possible in general.
 
 = Begin Sidebar: Why Leap Seconds =
 
-READ this carefully, and if there are errors, please correct.  An
+Read this carefully, and if there are errors, please correct.  An
 understanding of the following terms is critical to make sense of the
 situation, which would be farcical if it were not serious.
 
@@ -64,7 +64,7 @@ error (UT1 - UTC) build up. This is of the order of a few ms each midnight, not
 always the same way (think earthquakes that move the earth's crust).
 
 Once the error has built up substantially, every few years, we (and by
-"we", I mean M Daniel Gambis at the IERS) declare that a future
+"we", I mean M. Daniel Gambis at the IERS) declare that a future
 day will have 86401 secs.  This is the Leap Second.  Note that this
 often overcorrects, but if we wait a few months, the error will disappear.
 
@@ -79,11 +79,10 @@ Two last things:
     definitions above that causes leap seconds
  2. POSIX declares that there is no conflict, there are always 86400 SI
     secs in a day, and hence no leap seconds.  The fact that ostriches
-    survive in the wild indicates that this is not as mind-crushing
+    survive in the wild indicates that this is not as mind-crushingly
     wrong as it may seem.
 
 = End Sidebar =
-
 
 Date and time in GPS is represented as number of weeks mod 1024 from
 the start of zero second of 6 January 1980, and number of SI seconds into
@@ -104,11 +103,11 @@ the corrections when rollover occurs, as this may not be adequately
 tested.  We hence have to accept the UTC time reported by the device,
 while checking it on the sly).
 
-Satellites also broadcast a current leap-second
-correction which is updated on (theoretically) three-month boundaries
-according to rotational bulletins issued by the International
-Earth Rotation and Reference Systems Service (IERS).
-Historically all corrections have been made on six-month boundaries.
+Satellites also broadcast a current leap-second correction which is
+updated on (theoretically) three-month boundaries according to
+rotational bulletins issued by the International Earth Rotation and
+Reference Systems Service (IERS).  Historically all corrections have
+been made on six-month boundaries.
 
 The leap-second correction is only included in the satellite subframe
 broadcast, roughly once ever 20 minutes.  While the satellites do
@@ -133,7 +132,7 @@ afoot to upgrade the satellite counters to 13 bits; this will delay
 the next rollover until 2173.
 
 For accurate time reporting, therefore, a GPS requires a supplemental
-time references sufficient to identify the current rollover period,
+time reference sufficient to identify the current rollover period,
 e.g. accurate to within 512 weeks.  Many NMEA GPSes have a wired-in
 assumption about the UTC time of the last rollover and will thus report
 incorrect times outside the rollover period they were designed in.
@@ -216,14 +215,14 @@ void gpsd_time_init(struct gps_context_t *context, time_t starttime)
      * just before a century mark, but that case is probably doomed
      * anyhow because of 2-digit years.
      */
-    context->leap_seconds = LEAPSECOND_NOW;
-    context->century = CENTURY_BASE;
+    context->leap_seconds = BUILD_LEAPSECONDS;
+    context->century = BUILD_CENTURY;
     context->start_time = starttime;
 
     context->rollovers = (int)((context->start_time-GPS_EPOCH) / GPS_ROLLOVER);
 
     if (context->start_time < GPS_EPOCH)
-	gpsd_report(context->debug, LOG_ERROR,
+	gpsd_report(&context->errout, LOG_ERROR,
 		    "system time looks bogus, dates may not be reliable.\n");
     else {
 	/* we've forced the UTC timezone, so this is actually UTC */
@@ -236,7 +235,7 @@ void gpsd_time_init(struct gps_context_t *context, time_t starttime)
 	now->tm_year += 1900;
 	context->century = now->tm_year - (now->tm_year % 100);
 	(void)unix_to_iso8601((timestamp_t)context->start_time, scr, sizeof(scr));
-	gpsd_report(context->debug, LOG_INF,
+	gpsd_report(&context->errout, LOG_INF,
 		    "startup at %s (%d)\n",
 		    scr, (int)context->start_time);
     }
@@ -251,9 +250,9 @@ void gpsd_set_century(struct gps_device_t *session)
  */
 {
     char *end;
-    if (strstr((char *)session->packet.outbuffer, "Date:") != NULL) {
+    if (strstr((char *)session->lexer.outbuffer, "Date:") != NULL) {
 	int year;
-	unsigned char *cp = session->packet.outbuffer + 5;
+	unsigned char *cp = session->lexer.outbuffer + 5;
 	while (isspace(*cp))
 	    --cp;
 	year = (int)strtol((char *)cp, &end, 10);
@@ -273,8 +272,8 @@ timestamp_t gpsd_utc_resolve(/*@in@*/struct gps_device_t *session)
      */
     timestamp_t t;
 
-    t = (timestamp_t)mkgmtime(&session->driver.nmea.date) +
-	session->driver.nmea.subseconds;
+    t = (timestamp_t)mkgmtime(&session->nmea.date) +
+	session->nmea.subseconds;
     session->context->valid &=~ GPS_TIME_VALID;
 
     /*
@@ -291,7 +290,7 @@ timestamp_t gpsd_utc_resolve(/*@in@*/struct gps_device_t *session)
     if (session->newdata.time < (timestamp_t)session->context->start_time) {
 	char scr[128];
 	(void)unix_to_iso8601(session->newdata.time, scr, sizeof(scr));
-	gpsd_report(session->context->debug, LOG_WARN,
+	gpsd_report(&session->context->errout, LOG_WARN,
 		    "GPS week rollover makes time %s (%f) invalid\n",
 		    scr, session->newdata.time);
     }
@@ -310,14 +309,14 @@ void gpsd_century_update(/*@in@*/struct gps_device_t *session, int century)
 	 * certainly it means that a century mark has passed while
 	 * gpsd was running, and we should trust the new ZDA year.
 	 */
-	gpsd_report(session->context->debug, LOG_WARN,
+	gpsd_report(&session->context->errout, LOG_WARN,
 		    "century rollover detected.\n");
 	session->context->century = century;
     } else if (session->context->start_time >= GPS_EPOCH && century < session->context->century) {
 	/*
 	 * This looks like a GPS week-counter rollover.
 	 */
-	gpsd_report(session->context->debug, LOG_WARN,
+	gpsd_report(&session->context->errout, LOG_WARN,
 		    "ZDA year less than clock year, "
 		    "probable GPS week rollover lossage\n");
 	session->context->valid &=~ CENTURY_VALID;
@@ -338,7 +337,7 @@ timestamp_t gpsd_gpstime_resolve(/*@in@*/struct gps_device_t *session,
      * to 13 bits.
      */
     if ((int)week < (session->context->gps_week & 0x3ff)) {
-	gpsd_report(session->context->debug, LOG_INF,
+	gpsd_report(&session->context->errout, LOG_INF,
 		    "GPS week 10-bit rollover detected.\n");
 	++session->context->rollovers;
     }

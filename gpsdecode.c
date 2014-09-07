@@ -27,25 +27,6 @@ static unsigned int typelist[32];
  *
  **************************************************************************/
 
-ssize_t gpsd_write(struct gps_device_t *session,
-		   const char *buf,
-		   const size_t len)
-/* pass low-level data to devices straight through */
-{
-    return gpsd_serial_write(session, buf, len);
-}
-
-void gpsd_report(const int debuglevel, const int errlevel,
-		 const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    gpsd_labeled_report(debuglevel, errlevel, "gpsdecode:", fmt, ap);
-    va_end(ap);
-			
-}
-
 #ifdef AIVDM_ENABLE
 static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 {
@@ -527,14 +508,16 @@ static bool filter(gps_mask_t changed, struct gps_device_t *session)
     return false;
 }
 
-/*@ -compdestroy -compdef -usedef -uniondef @*/
+/*@ -mustfreeonly -compdestroy -compdef -usedef -uniondef -immediatetrans -observertrans -statictrans @*/
 static void decode(FILE *fpin, FILE*fpout)
 /* sensor data on fpin to dump format on fpout */
 {
     struct gps_device_t session;
     struct gps_context_t context;
     struct policy_t policy;
+#if defined(SOCKET_EXPORT_ENABLE) || defined(AIVDM_ENABLE)
     char buf[GPS_JSON_RESPONSE_MAX * 4];
+#endif
 
     //This looks like a good idea, but it breaks regression tests
     //(void)strlcpy(session.gpsdata.dev.path, "stdin", sizeof(session.gpsdata.dev.path));
@@ -542,7 +525,7 @@ static void decode(FILE *fpin, FILE*fpout)
     policy.json = json;
     policy.scaled = scaled;
 
-    gps_context_init(&context);
+    gps_context_init(&context, "gpsdecode");
     gpsd_time_init(&context, time(NULL));
     context.readonly = true;
     gpsd_init(&session, &context, NULL);
@@ -559,17 +542,18 @@ static void decode(FILE *fpin, FILE*fpout)
 
 	if (changed == ERROR_SET || changed == NODATA_IS)
 	    break;
-	if (session.packet.type == COMMENT_PACKET)
+	if (session.lexer.type == COMMENT_PACKET)
 	    gpsd_set_century(&session);
-	if (verbose >= 1 && TEXTUAL_PACKET_TYPE(session.packet.type))
-	    (void)fputs((char *)session.packet.outbuffer, fpout);
-	if ((changed & (REPORT_IS|SUBFRAME_SET|AIS_SET|RTCM2_SET|RTCM3_SET|PASSTHROUGH_IS)) == 0)
+	if (verbose >= 1 && TEXTUAL_PACKET_TYPE(session.lexer.type))
+	    (void)fputs((char *)session.lexer.outbuffer, fpout);
+	/* mask should match what's in report_data() */
+	if ((changed & (REPORT_IS|GST_SET|SATELLITE_SET|SUBFRAME_SET|ATTITUDE_SET|RTCM2_SET|RTCM3_SET|AIS_SET|PASSTHROUGH_IS)) == 0)
 	    continue;
 	if (!filter(changed, &session))
 	    continue;
 	else if (json) {
 	    if ((changed & PASSTHROUGH_IS) != 0) {
-		(void)fputs((char *)session.packet.outbuffer, fpout);
+		(void)fputs((char *)session.lexer.outbuffer, fpout);
 		(void)fputs("\n", fpout);
 	    }
 #ifdef SOCKET_EXPORT_ENABLE
@@ -585,7 +569,7 @@ static void decode(FILE *fpin, FILE*fpout)
 	    }
 #endif /* SOCKET_EXPORT_ENABLE */
 #ifdef AIVDM_ENABLE
-	} else if (session.packet.type == AIVDM_PACKET) {
+	} else if (session.lexer.type == AIVDM_PACKET) {
 	    if ((changed & AIS_SET)!=0) {
 		if (session.gpsdata.ais.type == 24 && session.gpsdata.ais.type24.part != both && !split24)
 		    continue;
@@ -605,9 +589,14 @@ static void encode(FILE *fpin, FILE *fpout)
     struct policy_t policy;
     struct gps_device_t session;
     int lineno = 0;
+    struct gps_context_t context;
 
     memset(&policy, '\0', sizeof(policy));
     memset(&session, '\0', sizeof(session));
+    memset(&context, '\0', sizeof(context));
+    session.context = &context;
+    context.errout.debug = 0;
+    context.errout.label = "gpsdecode";
     (void)strlcpy(session.gpsdata.dev.path,
 		  "stdin",
 		  sizeof(session.gpsdata.dev.path));
@@ -635,7 +624,7 @@ static void encode(FILE *fpin, FILE *fpout)
 	(void)fputs(inbuf, fpout);
     }
 }
-/*@ +compdestroy +compdef +usedef @*/
+/*@ +mustfreeonly +compdestroy +compdef +usedef +immediatetrans +observertrans @ +statictrans*/
 #endif /* SOCKET_EXPORT_ENABLE */
 
 int main(int argc, char **argv)

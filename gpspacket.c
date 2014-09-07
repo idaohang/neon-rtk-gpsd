@@ -14,7 +14,19 @@ static PyObject *ErrorObject = NULL;
 
 static PyObject *report_callback = NULL;
 
-void gpsd_report(int unused UNUSED, int errlevel, const char *fmt, ... )
+static void basic_report(const char *buf)
+{
+    (void)fputs(buf, stderr);
+}
+
+void errout_reset(struct gpsd_errout_t *errout)
+{
+    errout->debug = 0;
+    errout->report = basic_report;
+}
+
+void gpsd_report(const struct gpsd_errout_t *errout UNUSED, 
+		 int errlevel, const char *fmt, ... )
 {
     char buf[BUFSIZ];
     PyObject *args;
@@ -40,11 +52,12 @@ void gpsd_report(int unused UNUSED, int errlevel, const char *fmt, ... )
     Py_DECREF(args);
 }
 
+
 static PyTypeObject Lexer_Type;
 
 typedef struct {
 	PyObject_HEAD
-	struct gps_packet_t lexer;
+	struct gps_lexer_t lexer;
 } LexerObject;
 
 static LexerObject *
@@ -54,7 +67,7 @@ newLexerObject(PyObject *arg UNUSED)
     self = PyObject_New(LexerObject, &Lexer_Type);
     if (self == NULL)
 	return NULL;
-    memset(&self->lexer, 0, sizeof(struct gps_packet_t));
+    memset(&self->lexer, 0, sizeof(struct gps_lexer_t));
     packet_reset(&self->lexer);
     return self;
 }

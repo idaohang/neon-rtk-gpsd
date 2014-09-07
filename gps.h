@@ -39,21 +39,17 @@ extern "C" {
  * 5.1 - GPS_PATH_MAX uses system PATH_MAX; split24 flag added. New
  *       model and serial members in part B of AIS type 24, conforming
  *       with ITU-R 1371-4. New timedrift structure (Nov 2013, release 3.10).
+ * 5.2 - AIS type 6 and 8 get 'structured' flag; GPS_PATH_MAX
+ *       shortened because devices has moved out of union. Sentence
+ *       tag fields dropped from emitted JSON.
  */
 #define GPSD_API_MAJOR_VERSION	5	/* bump on incompatible changes */
-#define GPSD_API_MINOR_VERSION	1	/* bump on compatible changes */
+#define GPSD_API_MINOR_VERSION	2	/* bump on compatible changes */
 
-#define MAXTAGLEN	8	/* maximum length of sentence tag name */
 #define MAXCHANNELS	72	/* must be > 12 GPS + 12 GLONASS + 2 WAAS */
 #define GPS_PRNMAX	32	/* above this number are SBAS satellites */
 #define MAXUSERDEVS	4	/* max devices per user */
-
-/* PATH_MAX needs to be enough for long names like /dev/serial/by-id/... */
-#ifdef PATH_MAX
-#define GPS_PATH_MAX   PATH_MAX
-#else
-#define GPS_PATH_MAX   1024
-#endif
+#define GPS_PATH_MAX	32	/* for names like /dev/serial/by-id/... */
 
 /*
  * The structure describing an uncertainty volume in kinematic space.
@@ -62,22 +58,8 @@ extern "C" {
  *
  * All double values use NAN to indicate data not available.
  *
- * Usually all the information in this structure was considered valid
- * by the GPS at the time of update.  This will be so if you are using
- * a GPS chipset that speaks SiRF binary, Garmin binary, or Zodiac binary.
- * This covers over 80% of GPS products in early 2005.
- *
- * If you are using a chipset that speaks NMEA, this structure is updated
- * in bits by GPRMC (lat/lon, track, speed), GPGGA (alt, climb), GPGLL
- * (lat/lon), and GPGSA (eph, epv).  Most NMEA GPSes take a single fix
- * at the beginning of a 1-second cycle and report the same timestamp in
- * GPRMC, GPGGA, and GPGLL; for these, all info is guaranteed correctly
- * synced to the time member, but you'll get different stages of the same
- * update depending on where in the cycle you poll.  A very few GPSes,
- * like the Garmin 48, take a new fix before more than one of of
- * GPRMC/GPGGA/GPGLL during a single cycle; thus, they may have different
- * timestamps and some data in this structure can be up to 1 cycle (usually
- * 1 second) older than the fix time.
+ * All the information in this structure was considered valid
+ * by the GPS at the time of update.
  *
  * Error estimates are at 95% confidence.
  */
@@ -975,6 +957,7 @@ struct ais_t
 	    //unsigned int spare;	spare bit(s) */
 	    unsigned int dac;           /* Application ID */
 	    unsigned int fid;           /* Functional ID */
+	    bool structured;		/* True match for DAC/FID? */
 #define AIS_TYPE6_BINARY_MAX	920	/* 920 bits */
 	    size_t bitcount;		/* bit count of the data */
 	    union {
@@ -1246,6 +1229,7 @@ struct ais_t
 	    unsigned int fid;       	/* Functional ID */
 #define AIS_TYPE8_BINARY_MAX	952	/* 952 bits */
 	    size_t bitcount;		/* bit count of the data */
+	    bool structured;		/* True match for DAC/FID? */
 	    union {
 		char bitdata[(AIS_TYPE8_BINARY_MAX + 7) / 8];
 		/* Inland static ship and voyage-related data */
@@ -1255,6 +1239,7 @@ struct ais_t
 		    unsigned int beam;  	/* Beam of ship */
 		    unsigned int shiptype;	/* Ship/combination type */
 		    unsigned int hazard;	/* Hazardous cargo */
+#define DAC200FID10_HAZARD_MAX	5
 		    unsigned int draught;	/* Draught */
 		    unsigned int loaded;	/* Loaded/Unloaded */
 		    bool speed_q;	/* Speed inf. quality */
@@ -1882,7 +1867,6 @@ struct policy_t {
     bool scaled;			/* requesting report scaling? */
     bool timing;			/* requesting timing info */
     bool split24;			/* requesting split AIS Type 24s */
-    bool pps;				/* requesting PPS in NMEA/raw modes */
     int loglevel;			/* requested log level of messages */
     char devpath[GPS_PATH_MAX];		/* specific device to watch */
     char remote[GPS_PATH_MAX];		/* ...if this was passthrough */
@@ -2008,11 +1992,14 @@ struct gps_data_t {
 
     struct policy_t policy;	/* our listening policy */
 
-    /* should be moved to privdata someday */
-    char tag[MAXTAGLEN+1];	/* tag of last sentence processed */
+    struct {
+	timestamp_t time;
+	int ndevices;
+	struct devconfig_t list[MAXUSERDEVS];
+    } devices;
 
     /* pack things never reported together to reduce structure size */
-#define UNION_SET	(RTCM2_SET|RTCM3_SET|SUBFRAME_SET|AIS_SET|ATTITUDE_SET|GST_SET|VERSION_SET|DEVICELIST_SET|LOGMESSAGE_SET|ERROR_SET|TIMEDRIFT_SET)
+#define UNION_SET	(RTCM2_SET|RTCM3_SET|SUBFRAME_SET|AIS_SET|ATTITUDE_SET|GST_SET|VERSION_SET|LOGMESSAGE_SET|ERROR_SET|TIMEDRIFT_SET)
     union {
 	/* unusual forms of sensor data that might come up the pipe */
 	struct rtcm2_t	rtcm2;
@@ -2024,11 +2011,6 @@ struct gps_data_t {
 	struct gst_t gst;
 	/* "artificial" structures for various protocol responses */
 	struct version_t version;
-	struct {
-	    timestamp_t time;
-	    int ndevices;
-	    struct devconfig_t list[MAXUSERDEVS];
-	} devices;
 	char error[256];
 	struct timedrift_t timedrift;
     };

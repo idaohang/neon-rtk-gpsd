@@ -81,17 +81,23 @@ for months between new tracker bugs.</p>
 
 <h2>We have an extensive suite of unit tests and regression tests</h2>
 
-<p>GPSD has around 90 unit tests and regression tests, including sample
+<p>GPSD has around 100 unit tests and regression tests, including sample
 device output for almost every sensor type we support. We've put a lot of
 effort into making the tests easy and fast to run so they can be run
 often. This makes it actively difficult for random code changes to
 break our device drivers without somebody noticing.</p>
 
 <p>Which isn't to say those drivers can't be wrong, just that the ways
-they can be wrong are constrained to be through either (a) a
-protocol-spec-level misunderstanding of what the driver is supposed to
-be doing, or (b) an implementation bug somewhere in the program's
-state space that is obscure and difficult to reach. Coverity only
+they can be wrong are constrained to be through either
+<ol>
+<li> a protocol-spec-level misunderstanding of what the driver is
+supposed to be doing, or </li>
+<li> an implementation bug somewhere in the program's
+state space that is obscure and difficult to reach.  </li>
+</ol>
+</p>
+
+<p>Coverity only
 turned up two driver bugs - static buffer overruns in methods for
 changing the device's reporting protocol and line speed that escaped
 notice because they can't be checked in our test harnesses but only on
@@ -124,7 +130,7 @@ release cycle.</p>
 
 <p>cppcheck is much newer and much less prone to false
 positives. Likewise scan-build. But here's what experience tells us:
-each of these three tools finds overlapping but different sets of
+each of these four tools finds overlapping but different sets of
 bugs. Coverity is, by reputation at least, capable enough that it
 might dominate one or more of them - but why take chances? Best to use
 all four and constrain the population of undiscovered bugs into as
@@ -132,7 +138,7 @@ small a fraction of the state space as we can.</p>
 
 <p>We also use <a href='http://valgrind.org/'>valgrind</a> to check
 for memory leaks, though this is not expected to turn up bugs (and
-doesn't) due to our no-dynamic-allocation <a href="hacking#malloc">house
+doesn't) due to our no-dynamic-allocation <a href="hacking.html#malloc">house
 rule</a>.</p>
 
 <h2>We are methodical and merciless</h2>

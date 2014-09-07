@@ -24,13 +24,6 @@ Consider merging the calibration draft into the Time Service HOWTO.
 
 Our goal is to be independent of the system clock.
 
-**** Compile the GPS week of the build into the build
-
-The obvious place tp put this is in timebase.h. Not too expensive;
-will typically cause extra work once per seven days.  The benefit is that
-we can compare received week to the compiled in week and if the latter
-is less know that a rollover has occurred.
-
 **** Maybe apply wraparound compensation ****
 
 See <http://www.febo.com/pipermail/time-nuts/2013-August/079271.html>
@@ -44,6 +37,55 @@ confidence measure at a high level.  We'd use the confidence level to
 control (a) whether gpsd ships to NTP, and (b) how it sets time
 uncertainty in output JSON.
 
+*** Optionally use tag blocks in NMEA output
+
+Ed W. writes:
+>Feature request: I would like to see an option to get the NMEA data
+>out of gpsd, but augmented with a timestamp on each sentence and
+>details of which input fed in the data. TAG blocks appear to solve
+>that problem perfectly.  So the feature request is simply an option
+>that inserts a TAG block for each emitted sentence from GPSd with a
+>timestamp and some handle which references the input method for the
+>sentence.
+>
+>I think all this is effectively emitted with the JSON output (?), so
+>really this is just adding it to the NMEA sentence output options via
+>the TAG structure
+
+However, Iván Sánchez Ortega notes:
+
+>There is one *big* problem with using TAG blocks to timestamp the sentences.
+>The standards (as far as I/we know) say that the timestamp is **either** the
+>number of seconds **or** milliseconds since the UNIX epoch, but we do **not**
+>know if the initial state should be secs, msecs, or nothing. We do not know
+>how clients reading that TAGblocked NMEA stream should ask GPSD to switch the
+>timestamp units (or enable/disable them).
+>
+>There are a few sentences introduced in NMEA 4.00 that supposedly allow that -
+>the client sends a sentence to the server, and then the server starts
+>TAGblocking sentences. But, alas, there are no examples anywhere.
+>
+>>From my personal experience, the way to know if a TAGblocked timestamp is in
+>seconds or milliseconds is ask the people in charge of setting up the
+>device/service. Perhaps some devices output only secs/msecs, and some other
+>accept the NMEA 4.00 TAGblock configuration sentences.
+>
+>I, for one, would like to see the secs/msecs problem solved before GPSD
+>embarks on the enterprise of writing TAGblocks.
+
+*** RFC2783 bugs
+
+**** detangle TIOCMIWAIT and RFC2783
+
+Currently, the code for RFC2783 seems to depend (logically) on
+TIOCMIWAIT support.  However, RFC2783 (and really, no standard)
+defines TIOCMIWAIT, and NetBSD (and probably FreeBSD) do not implement
+it.  So, there really should be two separate implementations, one that
+works with TIOCMIWAIT (and thus only on Linux and OpenBSD) and one
+that assumes only RFC2783 (and thus works on Linux, FreeBSD and
+NetBSD, as well as any future system that complies with RFC2783 and
+uses the serial port for time_pps_init).
+
 *** Client bugs
 
 **** In gpsmon's PPS Offset field
@@ -51,27 +93,6 @@ uncertainty in output JSON.
 Presently PPS Offset is displayed in direct mode for NMEA, SiRF, and
 UBX devices.  Others should probably do likewise, notably the
 Motorola Oncore and Garmin drivers.
-
-**** gpsmon driver switching and blocking on error
-
-Hal Murray reports:
-
-   If I run .gpsmon /dev/ttyUSB0
-
-   It starts up in NMEA0183 mode as I expect.
-   "i" switches to SiRF, again, as I expect.
-
-   "n" switches the display to NMEA layout, but the header still says SiRF.
-   Another "n" now says: Device type has no mode switcher.
-   At this point, "i" doesn't do anything.  (no pause either)
-
-The second 'n' is losing information that it shouldn't.
-
-   If I start over and feed it an "f", it starts blinking "Unknown command "f"
-   The logging and display update stops.  After I type another character,  it
-   clears the blinking error message and stars logging/updating again.
-
-Display update should not stop while this is going on.
 
 *** Time offset debugging in gpsmon ***
 
@@ -85,6 +106,8 @@ Hall Murray:
 >
 > Or perhaps a higher level keyboard command to switch into timekeeping
 > debugging mode rather than position debugging mode.
+
+Add PPS offset to each PPS bar.
 
 **** Speed, mode and rate-changes in client-mode gpsmon.
 
@@ -101,7 +124,7 @@ We caw now *really* measure latency from GPS top of second when it has
 1PPS.  Add this capability to gpsprof and revise the "Where's the
 Latency?" white paper.
 
-*** Low-pwer autoconfiguration in the uBlox driver ***
+*** Low-power autoconfiguration in the uBlox driver ***
 
 Anthony Stirk <upuaut@gmail.com> writes on Wed May 21 06:09:00 2014:
 
@@ -152,16 +175,7 @@ complete; the only missing cases are a handful of IMO 236 and IMO 289
 message 6 and 8 subtypes - specifically, 6/23, 8/21, 8/22, 8/24, and
 8/26.
 
-**** Addressed case of AIS Types 25 and 26 is not handled.
-
-We'd need machinery to shift a byte array 30 bits left...
-
 ** To do:
-
-*** On next API bump ***
-
-In struct gpsdata_t, move the device list out of the union and move
-the tag field to private data.
 
 ***  Make subframe reports available in the C API.
 

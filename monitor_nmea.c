@@ -189,9 +189,9 @@ static void nmea_update(void)
     assert(gpgstwin != NULL);
 
     /* can be NULL if packet was overlong */
-    fields = session.driver.nmea.field;
+    fields = session.nmea.field;
 
-    if (session.packet.outbuffer[0] == (unsigned char)'$' 
+    if (session.lexer.outbuffer[0] == (unsigned char)'$' 
 		&& fields != NULL && fields[0] != NULL) {
 	int ymax, xmax;
 	timestamp_t now;

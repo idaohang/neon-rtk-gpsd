@@ -76,9 +76,13 @@ __locations = [
 
 GPS_EPOCH	= 315964800		# 6 Jan 1981 00:00:00
 SECS_PER_WEEK	= 60 * 60 * 24 * 7	# Seconds per GPS week
+ROLLOVER	= 1024			# 10-bit week rollover 
 
 def gps_week(t):
-    return (t - GPS_EPOCH)/SECS_PER_WEEK
+    return ((t - GPS_EPOCH)/SECS_PER_WEEK % ROLLOVER)
+
+def gps_rollovers(t):
+    return ((t - GPS_EPOCH)/SECS_PER_WEEK / ROLLOVER)
 
 def isotime(s):
     "Convert timestamps in ISO8661 format to and from Unix time including optional fractional seconds."
@@ -121,8 +125,7 @@ def retrieve():
         except IOError:
             if verbose:
                 print >>sys.stderr, "IOError: %s" % url
-    else:
-        return None
+    return None
 
 def last_insertion_time():
     "Give last potential insertion time for a leap second."
@@ -192,8 +195,9 @@ def make_leapsecond_include(infile):
     # which doesn't count substitution through locals() as use.
     leapjumps = fetch_leapsecs(infile)
     now = int(time.time())
-    _year = time.strftime("%Y", time.gmtime(now))
-    _gps_week_now = gps_week(now)
+    _century = time.strftime("%Y", time.gmtime(now))[:2] + "00"
+    _week = gps_week(now)
+    _rollovers = gps_rollovers(now)
     _isodate = isotime(now - now % SECS_PER_WEEK)
     _leapsecs = -1
     for leapjump in leapjumps:
@@ -205,9 +209,10 @@ def make_leapsecond_include(infile):
  *
  * Correct for week beginning %(_isodate)s
  */
-#define CENTURY_BASE\t%(_year)s00
-#define LEAPSECOND_NOW\t%(_leapsecs)d
-#define GPS_WEEK_NOW\t%(_gps_week_now)d
+#define BUILD_CENTURY\t%(_century)s
+#define BUILD_WEEK\t%(_week)d		# Assumes 10-bit week counter
+#define BUILD_LEAPSECONDS\t%(_leapsecs)d
+#define BUILD_ROLLOVERS\t%(_rollovers)d		# Assumes 10-bit week counter
 """ % locals()
 
 def conditional_leapsecond_fetch(outfile, timeout):
@@ -352,32 +357,32 @@ if __name__ == '__main__':
     import getopt
     (options, arguments) = getopt.getopt(sys.argv[1:], "hvf:g:H:i:n:o:I:O:")
     for (switch, val) in options:
-        if (switch == '-h'):    # help, get usage only
+        if switch == '-h':    # help, get usage only
             usage()
-        if (switch == '-v'):    # be verbose
+        elif switch == '-v':    # be verbose
             verbose=1
-        if (switch == '-f'):    # Fetch USNO data to cache locally
+        elif switch == '-f':    # Fetch USNO data to cache locally
             save_leapseconds(val)
             raise SystemExit, 0
-        elif (switch == '-g'):  # Graph the leap_second history
+        elif switch == '-g':  # Graph the leap_second history
             graph_history(val)
             raise SystemExit, 0
-        elif (switch == '-H'):  # make leapsecond include
+        elif switch == '-H':  # make leapsecond include
             sys.stdout.write(make_leapsecond_include(val))
             raise SystemExit, 0
-        elif (switch == '-i'):  # Compute Unix time from RFC822 date
+        elif switch == '-i':  # Compute Unix time from RFC822 date
             print rfc822_to_unix(val)
             raise SystemExit, 0
-        elif (switch == '-n'):  # Compute possible next leapsecond
+        elif switch == '-n':  # Compute possible next leapsecond
             printnext(val)
             raise SystemExit, 0
-        elif (switch == '-o'):  # Compute RFC822 date from Unix time
+        elif switch == '-o':  # Compute RFC822 date from Unix time
             print unix_to_rfc822(float(val))
             raise SystemExit, 0
-        elif (switch == '-I'):  # Compute Unix time from ISO8601 date
+        elif switch == '-I':  # Compute Unix time from ISO8601 date
             print isotime(val)
             raise SystemExit, 0
-        elif (switch == '-O'):  # Compute ISO8601 date from Unix time
+        elif switch == '-O':  # Compute ISO8601 date from Unix time
             print isotime(float(val))
             raise SystemExit, 0
 

@@ -67,8 +67,8 @@ GPS Hall of Shame
 
 <p>The GPS world is full of shoddy, poorly-documented designs.  All
 too many devices have behaviors that drive the harried maintainers of
-<code>gpsd</code> to shake their heads and mutter <q>What where they
-<em>thinking</em></q>?</p>
+<code>gpsd</code> to shake their heads and mutter <q>What were they
+<em>thinking</em>?</q></p>
 
 <p>This page goes beyond the merely ordinary and commemorates the
 really <em>special</em> blunders &mdash; bugs and design errors so
@@ -105,6 +105,11 @@ is the only way to get the receiver to communicate again.</li>
 
 <li>Some Garmin chips issue a bogus length field, too.  This from the
 outfit that likes to tout itself as the industry leader!</li>
+
+<li>The SiRF-IV chipset has a tendency to freeze when switched from
+binary to NMEA mode (powering it off unjams it).  This is some kind of
+race condition in the firmware that cannot be fixed by waiting on
+command ACKs; we have tried that.</p>
 </ul>
 
 <h2>Documentation blunders</h2>
@@ -114,7 +119,7 @@ quality (or, rather, utter <em>lack</em> of quality) of their chipset
 documentation.  You would think they'd have figured out by now that
 good and readily available documentation, making it easy for others to
 interface to their hardware, will sell more hardware.  But no; most
-vendors make documentation difficult to get, and it rends to be both
+vendors make documentation difficult to get, and it tends to be both
 incomplete and vague when you get it.  A few vendors go above and
 beyond the normal stupidity...</p>
 

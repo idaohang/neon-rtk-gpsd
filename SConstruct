@@ -24,10 +24,10 @@
 # * Coveraging mode: gcc "-coverage" flag requires a hack for building the python bindings
 
 # Release identification begins here
-gpsd_version = "3.11~dev"
+gpsd_version = "3.12~dev"
 
 # library version
-libgps_version_current   = 21
+libgps_version_current   = 22
 libgps_version_revision  = 0
 libgps_version_age       = 0
 libgpsd_version_current  = 22
@@ -60,9 +60,9 @@ devmail    = "gpsd-dev@lists.nongnu.org"
 usermail   = "gpsd-users@lists.nongnu.org"
 annmail    = "gpsd-announce@nongnu.org"
 ircchan    = "irc://chat.freenode.net/#gpsd"
-tiplink    = "<a href='http://gittip.com/esr'>leave a tip at Gittip</a>"
-tipwidget  = "<script data-gittip-username='esr' \
-	data-gittip-widget='button' src='//gttp.co/v1.js'></script>"
+tiplink    = "<a href='http://gratipay.com/esr'>leave a tip at Gratipay</a>"
+tipwidget  = "<script data-gratipay-username='esr' \
+	data-gratipay-widget='button' src='//gttp.co/v1.js'></script>"
 # Hosting information ends here
 
 EnsureSConsVersion(2,0,1)
@@ -98,7 +98,7 @@ imloads = True
 
 boolopts = (
     # GPS protocols
-    ("nmea",          True,  "NMEA support"),
+    ("nmea0183",      True,  "NMEA0183 support"),
     ("ashtech",       True,  "Ashtech support"),
     ("earthmate",     True,  "DeLorme EarthMate Zodiac support"),
     ("evermore",      True,  "EverMore binary support"),
@@ -147,11 +147,12 @@ boolopts = (
     ("clientdebug",   True,  "client debugging support"),
     ("oldstyle",      True,  "oldstyle (pre-JSON) protocol support"),
     ("libgpsmm",      True,  "build C++ bindings"),
-    ("libQgpsmm",     True,  "build QT bindings"),
+    ("libQgpsmm",     False, "build QT bindings (deprecated alias)"),
+    ("qt",            False, "build QT bindings"),
     # Daemon options
     ("reconfigure",   True,  "allow gpsd to change device settings"),
     ("controlsend",   True,  "allow gpsctl/gpsmon to change device settings"),
-    ("cheapfloats",   True,  "float ops are cheap, compute error estimates"),
+    ("nofloats",      False, "float ops are expensive, suppress error estimates"),
     ("squelch",       False, "squelch gpsd_report/gpsd_hexdump to save cpu"),
     ("ncurses",       True,  "build with ncurses"),
     # Build control
@@ -161,10 +162,13 @@ boolopts = (
     ("debug",         False, "include debug information in build"),
     ("profiling",     False, "build with profiling enabled"),
     ("coveraging",    False, "build with code coveraging enabled"),
-    ("strip",         True,  "build with stripping of binaries enabled"),
+    ("nostrip",       False, "don't symbol-strip binaries at link time"),
     ("chrpath",       False, "use chrpath to edit library load paths"),
     ("manbuild",      True,  "build help in man and HTML formats"),
     ("leapfetch",     True,  "fetch up-to-date data on leap seconds."),
+    ("minimal",       False, "turn off every option not set on the command line"), 
+    # Test control
+    ("slow",          False, "run tests with realistic (slow) delays"),
     )
 for (name, default, help) in boolopts:
     opts.Add(BoolVariable(name, help, default))
@@ -188,7 +192,6 @@ nonboolopts = (
     ("target",              "",            "cross-development target"),
     ("sysroot",             "",            "cross-development system root"),
     )
-
 for (name, default, help) in nonboolopts:
     opts.Add(name, help, default)
 
@@ -205,7 +208,6 @@ pathopts = (
     )
 for (name, default, help) in pathopts:
     opts.Add(PathVariable(name, help, default, PathVariable.PathAccept))
-
 
 #
 # Environment creation
@@ -233,6 +235,12 @@ envs["LD_LIBRARY_PATH"] = os.getcwd()
 env = Environment(tools=["default", "tar", "textfile"], options=opts, ENV=envs)
 opts.Save('.scons-option-cache', env)
 env.SConsignFile(".sconsign.dblite")
+
+#  Minimal build turns off every option not set on the command line,
+if env['minimal']:
+    for (name, default, help) in boolopts:
+        if default == True and not ARGUMENTS.get(name):
+            env[name] = False
 
 for (name, default, help) in pathopts:
     env[name] = env.subst(env[name])
@@ -270,6 +278,13 @@ for key, value in os.environ.iteritems():
 # $SRCDIR replaces occurrences for $(srcdir) in the autotools build.
 env['SRCDIR'] = '.'
 
+# We may need to force slow regression tests to get around race
+# conditions in the pty layer, especially on a loaded machine.
+if env["slow"]:
+    env['REGRESSOPTS'] = "-S"
+else:
+    env['REGRESSOPTS'] = ""
+
 def announce(msg):
     if not env.GetOption("silent"):
         print msg
@@ -279,7 +294,6 @@ env.Append(CFLAGS='-D_GNU_SOURCE')
 
 # And we need some libraries
 env.MergeFlags("-lm")
-env.MergeFlags("-pthread")
 
 # DESTDIR environment variable means user wants to prefix the installation root.
 DESTDIR = os.environ.get('DESTDIR', '')
@@ -307,9 +321,12 @@ if env["shared"]:
 if 'MORECFLAGS' in os.environ:
     env.Append(CFLAGS=Split(os.environ['MORECFLAGS']))
 
+# Don't change CFLAGS if already set by environment.
+if not 'CFLAGS' in os.environ:
+    env.Append(CFLAGS=['-Wmissing-prototypes'])
+
 # Don't change CCFLAGS if already set by environment.
 if not 'CCFLAGS' in os.environ:
-    env.Append(CCFLAGS=['-Wmissing-prototypes'])
     env.Append(CCFLAGS=['-Wmissing-declarations'])
     # Should we build with profiling?
     if env['profiling']:
@@ -493,6 +510,9 @@ else:
                    '-Wcast-align','-Wmissing-declarations', '-Wmissing-prototypes',
                    '-Wstrict-prototypes', '-Wpointer-arith', '-Wreturn-type'):
         config.CheckCompilerOption(option)
+
+    if config.CheckCompilerOption("-pthread"):
+        env.MergeFlags("-pthread")
 
     env.Prepend(LIBPATH=[os.path.realpath(os.curdir)])
     if env["shared"] and env["chrpath"]:
@@ -754,7 +774,14 @@ pid_t getsid(pid_t pid);
         env['BUILDERS']["HTML"] = Builder(action=htmlbuilder,
                                           src_suffix=".xml", suffix=".html")
 
-    qt_network = env['libQgpsmm'] and config.CheckPKG('QtNetwork')
+    # If libQgpsmm is enabled, force on qt (depecrated config support).
+    if env["libQgpsmm"]:
+        env["qt"] = True
+
+    # Determine if Qt network libraries are present, and if not, force qt to off
+    qt_network = config.CheckPKG('QtNetwork')
+    if not qt_network:
+        env["qt"] = False
 
     env = config.Finish()
 
@@ -775,7 +802,7 @@ pid_t getsid(pid_t pid);
         announce("Adjust your PYTHONPATH to see library directories under /usr/local/lib")
 
     # Should we build the Qt binding?
-    if qt_network:
+    if env["qt"]:
         qt_env = env.Clone()
         qt_env.MergeFlags('-DUSE_QT')
         try:
@@ -958,7 +985,7 @@ compiled_gpsdlib = Library(env=env,
                            target="gpsd",
                            sources=libgpsd_sources,
                            version=libgpsd_version,
-                           parse_flags=usblibs + rtlibs + bluezlibs)
+                           parse_flags=usblibs + rtlibs + bluezlibs + ["-lgps"])
 
 libraries = [compiled_gpslib, compiled_gpsdlib]
 
@@ -1047,13 +1074,12 @@ cgps = env.Program('cgps', ['cgps.c'], parse_flags=gpslibs + ncurseslibs)
 env.Depends(cgps, compiled_gpslib)
 
 binaries = [gpsd, gpsdecode, gpsctl, gpsdctl, gpspipe, gps2udp, gpxlogger, lcdgps]
-if ncurseslibs:
+if env["ncurses"]:
     binaries += [cgps, gpsmon]
 
 # Test programs
 test_float = env.Program('test_float', ['test_float.c'])
 test_geoid = env.Program('test_geoid', ['test_geoid.c'], parse_flags=gpsdlibs)
-env.Depends(test_geoid, [compiled_gpsdlib, compiled_gpslib])
 test_json = env.Program('test_json', ['test_json.c'], parse_flags=gpslibs)
 env.Depends(test_json, compiled_gpslib)
 test_mkgmtime = env.Program('test_mkgmtime', ['test_mkgmtime.c'], parse_flags=gpslibs)
@@ -1341,7 +1367,7 @@ headerinstall = [ env.Install(installdir('includedir'), x) for x in ("libgpsmm.h
 binaryinstall = []
 binaryinstall.append(env.Install(installdir('sbindir'), [gpsd, gpsdctl]))
 binaryinstall.append(env.Install(installdir('bindir'),  [gpsdecode, gpsctl, gpspipe, gps2udp, gpxlogger, lcdgps]))
-if ncurseslibs:
+if env["ncurses"]:
     binaryinstall.append(env.Install(installdir('bindir'), [cgps, gpsmon]))
 binaryinstall.append(LibraryInstall(env, installdir('libdir'), compiled_gpslib))
 binaryinstall.append(LibraryInstall(env, installdir('libdir'), compiled_gpsdlib))
@@ -1352,7 +1378,7 @@ if env["shared"] and env["chrpath"]:
     env.AddPostAction(binaryinstall, '$CHRPATH -r "%s" "$TARGET"' \
                       % (installdir('libdir', False), ))
 
-if not env['debug'] and not env['profiling'] and env['strip']:
+if not env['debug'] and not env['profiling'] and not env['nostrip']:
     env.AddPostAction(binaryinstall, '$STRIP $TARGET')
 
 if not env['python']:
@@ -1362,7 +1388,7 @@ else:
     python_module_dir = python_lib_dir + os.sep + 'gps'
     python_extensions_install = python_env.Install( DESTDIR + python_module_dir,
                                                     python_built_extensions)
-    if not env['debug'] and not env['profiling'] and env['strip']:
+    if not env['debug'] and not env['profiling'] and not env['nostrip']:
         python_env.AddPostAction(python_extensions_install, '$STRIP $TARGET')
 
     python_modules_install = python_env.Install( DESTDIR + python_module_dir,
@@ -1463,7 +1489,7 @@ for (target,sources,description,params) in splint_table:
 # Putting in all these -U flags speeds up cppcheck and allows it to look
 # at configurations we actually care about.
 Utility("cppcheck", ["gpsd.h", "packet_names.h"],
-        "cppcheck -U__UNUSED__ -US_SPLINT_S -U__COVERITY__ -U__future__ -ULIMITED_MAX_CLIENTS -ULIMITED_MAX_DEVICES -UAF_UNSPEC -UINADDR_ANY -UFIXED_PORT_SPEED -UFIXED_STOP_BITS -U_WIN32 -U__CYGWIN__ -UPATH_MAX -UHAVE_STRLCAT -UHAVE_STRLCPY --template gcc --enable=all --inline-suppr --suppress='*:driver_proto.c' --force $SRCDIR")
+        "cppcheck -U__UNUSED__ -UUSE_QT -US_SPLINT_S -U__COVERITY__ -U__future__ -ULIMITED_MAX_CLIENTS -ULIMITED_MAX_DEVICES -UAF_UNSPEC -UINADDR_ANY -UFIXED_PORT_SPEED -UFIXED_STOP_BITS -U_WIN32 -U__CYGWIN__ -UPATH_MAX -UHAVE_STRLCAT -UHAVE_STRLCPY -UIPTOS_LOWDELAY -UIPV6_TCLASS -UTCP_NODELAY -UTIOCMIWAIT --template gcc --enable=all --inline-suppr --suppress='*:driver_proto.c' --force $SRCDIR")
 
 # Experimental check with clang analyzer
 Utility("scan-build", ["gpsd.h", "packet_names.h"],
@@ -1471,7 +1497,7 @@ Utility("scan-build", ["gpsd.h", "packet_names.h"],
 
 # Sanity-check Python code.
 pylint = Utility("pylint", ["jsongen.py", "maskaudit.py", python_built_extensions],
-        ['''pylint --output-format=parseable --reports=n --include-ids=y --disable=F0001,C0103,C0111,C0301,C0302,C0322,C0324,C0323,C0321,R0201,R0801,R0902,R0903,R0904,R0911,R0912,R0913,R0914,R0915,R0924,W0201,W0232,W0401,W0403,W0141,W0142,W0603,W0614,W0621,E1101,E1102,F0401 jsongen.py leapsecond.py maskaudit.py gpsprof.py gpscat.py gpsfake.py gegps.py gps/*.py xgps'''])
+        ['''pylint --rcfile=/dev/null --dummy-variables-rgx='^_' --msg-template="{path}:{line}: [{msg_id}({symbol}), {obj}] {msg}" --reports=n --disable=F0001,C0103,C0111,C1001,C0301,C0302,C0322,C0324,C0323,C0321,R0201,R0801,R0902,R0903,R0904,R0911,R0912,R0913,R0914,R0915,W0110,W0201,W0121,W0232,W0234,W0401,W0403,W0141,W0142,W0603,W0614,W0621,E1101,E1102,F0401 jsongen.py leapsecond.py maskaudit.py gpsprof.py gpscat.py gpsfake.py gegps.py gps/*.py xgps'''])
 
 # Check the documentation for bogons, too
 Utility("xmllint", glob.glob("*.xml"),
@@ -1516,10 +1542,13 @@ else:
     python_compilation_regress = None
 
 # using regress-drivers requires socket_export being enabled.
-if env['socket_export']:
+if not env['socket_export']:
+    announce("GPS regression tests suppressed because socket_export is off.")
+    gps_regress = None
+else:
     # Regression-test the daemon
     gps_regress = Utility("gps-regress", [gpsd, python_built_extensions],
-            '$SRCDIR/regress-driver test/daemon/*.log')
+            '$SRCDIR/regress-driver $REGRESSOPTS test/daemon/*.log')
 
     # Build the regression tests for the daemon.
     # Note: You'll have to do this whenever the default leap second
@@ -1534,20 +1563,24 @@ if env['socket_export']:
 #    regress-driver -b test/daemon/foo.log
 
 # Regression-test the RTCM decoder.
-rtcm_regress = Utility('rtcm-regress', [gpsdecode], [
-    '@echo "Testing RTCM decoding..."',
-    '@for f in $SRCDIR/test/*.rtcm2; do '
-        'echo "Testing $${f}..."; '
-        'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-        '$SRCDIR/gpsdecode -u -j <$${f} >$${TMPFILE}; '
-        'diff -ub $${f}.chk $${TMPFILE}; '
-        'rm -f $${TMPFILE}; '
-    'done;',
-    '@echo "Testing idempotency of JSON dump/decode for RTCM2"',
-    '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-    '$SRCDIR/gpsdecode -u -e -j <test/synthetic-rtcm2.json >$${TMPFILE}; '
-        'grep -v "^#" test/synthetic-rtcm2.json | diff -ub - $${TMPFILE}; '
-        'rm -f $${TMPFILE}; ',
+if not env["rtcm104v2"]:
+    announce("RTCM2 regression tests suppressed because rtcm104v2 is off.")
+    rtcm_regress = None
+else:
+    rtcm_regress = Utility('rtcm-regress', [gpsdecode], [
+        '@echo "Testing RTCM decoding..."',
+        '@for f in $SRCDIR/test/*.rtcm2; do '
+            'echo "Testing $${f}..."; '
+            'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+            '$SRCDIR/gpsdecode -u -j <$${f} >$${TMPFILE}; '
+            'diff -ub $${f}.chk $${TMPFILE}; '
+            'rm -f $${TMPFILE}; '
+        'done;',
+        '@echo "Testing idempotency of JSON dump/decode for RTCM2"',
+        '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+        '$SRCDIR/gpsdecode -u -e -j <test/synthetic-rtcm2.json >$${TMPFILE}; '
+            'grep -v "^#" test/synthetic-rtcm2.json | diff -ub - $${TMPFILE}; '
+            'rm -f $${TMPFILE}; ',
         ])
 
 # Rebuild the RTCM regression tests.
@@ -1558,43 +1591,47 @@ Utility('rtcm-makeregress', [gpsdecode], [
         ])
 
 # Regression-test the AIVDM decoder.
-aivdm_regress = Utility('aivdm-regress', [gpsdecode], [
-    '@echo "Testing AIVDM decoding w/ CSV format..."',
-    '@for f in $SRCDIR/test/*.aivdm; do '
-        'echo "Testing $${f}..."; '
-        'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-        '$SRCDIR/gpsdecode -u -c <$${f} >$${TMPFILE}; '
-        'diff -ub $${f}.chk $${TMPFILE} || echo "Test FAILED!"; '
-        'rm -f $${TMPFILE}; '
-    'done;',
-    '@echo "Testing AIVDM decoding w/ JSON unscaled format..."',
-    '@for f in $SRCDIR/test/*.aivdm; do '
-        'echo "  Testing $${f}..."; '
-        'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-        '$SRCDIR/gpsdecode -u -j <$${f} >$${TMPFILE}; '
-        'diff -ub $${f}.ju.chk $${TMPFILE} || echo "Test FAILED!"; '
-        'rm -f $${TMPFILE}; '
-    'done;',
-    '@echo "Testing AIVDM decoding w/ JSON scaled format..."',
-    '@for f in $SRCDIR/test/*.aivdm; do '
-        'echo "  Testing $${f}..."; '
-        'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-        '$SRCDIR/gpsdecode -j <$${f} >$${TMPFILE}; '
-        'diff -ub $${f}.js.chk $${TMPFILE} || echo "Test FAILED!"; '
-        'rm -f $${TMPFILE}; '
-    'done;',
-    '@echo "Testing idempotency of unscaled JSON dump/decode for AIS"',
-    '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-    '$SRCDIR/gpsdecode -u -e -j <$SRCDIR/test/sample.aivdm.ju.chk >$${TMPFILE}; '
-        'grep -v "^#" $SRCDIR/test/sample.aivdm.ju.chk | diff -ub - $${TMPFILE}; '
-        'rm -f $${TMPFILE}; ',
-    # Parse the unscaled json reference, dump it as scaled json, 
-    # and finally compare it with the scaled json reference
-    '@echo "Testing idempotency of scaled JSON dump/decode for AIS"',
-    '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
-    '$SRCDIR/gpsdecode -e -j <$SRCDIR/test/sample.aivdm.ju.chk >$${TMPFILE}; '
-        'grep -v "^#" $SRCDIR/test/sample.aivdm.js.chk | diff -ub - $${TMPFILE}; '
-        'rm -f $${TMPFILE}; ',
+if not env["aivdm"]:
+    announce("AIVDM regression tests suppressed because aivdm is off.")
+    aivdm_regress = None
+else:
+    aivdm_regress = Utility('aivdm-regress', [gpsdecode], [
+        '@echo "Testing AIVDM decoding w/ CSV format..."',
+        '@for f in $SRCDIR/test/*.aivdm; do '
+            'echo "Testing $${f}..."; '
+            'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+            '$SRCDIR/gpsdecode -u -c <$${f} >$${TMPFILE}; '
+            'diff -ub $${f}.chk $${TMPFILE} || echo "Test FAILED!"; '
+            'rm -f $${TMPFILE}; '
+        'done;',
+        '@echo "Testing AIVDM decoding w/ JSON unscaled format..."',
+        '@for f in $SRCDIR/test/*.aivdm; do '
+            'echo "  Testing $${f}..."; '
+            'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+            '$SRCDIR/gpsdecode -u -j <$${f} >$${TMPFILE}; '
+            'diff -ub $${f}.ju.chk $${TMPFILE} || echo "Test FAILED!"; '
+            'rm -f $${TMPFILE}; '
+        'done;',
+        '@echo "Testing AIVDM decoding w/ JSON scaled format..."',
+        '@for f in $SRCDIR/test/*.aivdm; do '
+            'echo "  Testing $${f}..."; '
+            'TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+            '$SRCDIR/gpsdecode -j <$${f} >$${TMPFILE}; '
+            'diff -ub $${f}.js.chk $${TMPFILE} || echo "Test FAILED!"; '
+            'rm -f $${TMPFILE}; '
+        'done;',
+        '@echo "Testing idempotency of unscaled JSON dump/decode for AIS"',
+        '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+        '$SRCDIR/gpsdecode -u -e -j <$SRCDIR/test/sample.aivdm.ju.chk >$${TMPFILE}; '
+            'grep -v "^#" $SRCDIR/test/sample.aivdm.ju.chk | diff -ub - $${TMPFILE}; '
+            'rm -f $${TMPFILE}; ',
+        # Parse the unscaled json reference, dump it as scaled json, 
+        # and finally compare it with the scaled json reference
+        '@echo "Testing idempotency of scaled JSON dump/decode for AIS"',
+        '@TMPFILE=`mktemp -t gpsd-test-XXXXXXXXXXXXXX.chk`; '
+        '$SRCDIR/gpsdecode -e -j <$SRCDIR/test/sample.aivdm.ju.chk >$${TMPFILE}; '
+            'grep -v "^#" $SRCDIR/test/sample.aivdm.js.chk | diff -ub - $${TMPFILE}; '
+            'rm -f $${TMPFILE}; ',
         ])
 
 # Rebuild the AIVDM regression tests.
@@ -1850,7 +1887,7 @@ Utility('udev-test', '', [
 
 # Ordinary cleanup
 clean = env.Clean(build,
-          map(glob.glob,("*.[oa]", "*.os", "*.os.*", "*.gcno", "*.pyc", "gps/*.pyc", "TAGS")) + \
+          map(glob.glob,("*.[oa]", "*.[1358]", "*.os", "*.os.*", "*.gcno", "*.pyc", "gps/*.pyc", "TAGS", "config.log")) + testprogs + \
           generated_sources + base_manpages.keys() + \
           map(lambda f: f[:-3], templated))
 
