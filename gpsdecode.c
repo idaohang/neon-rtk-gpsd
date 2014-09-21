@@ -12,6 +12,7 @@
 #endif /* S_SPLINT_S */
 
 #include "gpsd.h"
+#include "bits.h"
 #include "gps_json.h"
 
 static int verbose = 0;
@@ -20,6 +21,7 @@ static bool json = true;
 static bool split24 = false;
 static unsigned int ntypes = 0;
 static unsigned int typelist[32];
+struct gps_context_t context;
 
 /**************************************************************************
  *
@@ -124,7 +126,7 @@ static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 			   ais->type6.bitcount,
 			   gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
 					ais->type6.bitdata,
-					(ais->type6.bitcount + 7) / 8));
+					BITS_TO_BYTES(ais->type6.bitcount)));
 	break;
     case 7:			/* Binary Acknowledge */
     case 13:			/* Safety Related Acknowledge */
@@ -232,7 +234,7 @@ static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 			   ais->type8.bitcount,
 			   gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
 					ais->type8.bitdata,
-					(ais->type8.bitcount + 7) / 8));
+					BITS_TO_BYTES(ais->type8.bitcount)));
 	break;
     case 9:
 	(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -291,7 +293,7 @@ static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 		       ais->type17.bitcount,
 		       gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
 				    ais->type17.bitdata,
-				    (ais->type17.bitcount + 7) / 8));
+				    BITS_TO_BYTES(ais->type17.bitcount)));
 	break;
     case 18:
 	(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -447,7 +449,7 @@ static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 		       ais->type25.bitcount,
 		       gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
 				    ais->type25.bitdata,
-				    (ais->type25.bitcount + 7) / 8));
+				    BITS_TO_BYTES(ais->type25.bitcount)));
 	break;
     case 26:			/* Binary Message, Multiple Slot */
 	(void)snprintf(buf + strlen(buf), buflen - strlen(buf),
@@ -459,7 +461,7 @@ static void aivdm_csv_dump(struct ais_t *ais, char *buf, size_t buflen)
 		       ais->type26.bitcount,
 		       gpsd_hexdump(scratchbuf, sizeof(scratchbuf),
 				    ais->type26.bitdata,
-				    (ais->type26.bitcount + 7) / 8),
+				    BITS_TO_BYTES(ais->type26.bitcount)),
 		       ais->type26.radio);
 	break;
     case 27:			/* Long Range AIS Broadcast message */
@@ -513,7 +515,6 @@ static void decode(FILE *fpin, FILE*fpout)
 /* sensor data on fpin to dump format on fpout */
 {
     struct gps_device_t session;
-    struct gps_context_t context;
     struct policy_t policy;
 #if defined(SOCKET_EXPORT_ENABLE) || defined(AIVDM_ENABLE)
     char buf[GPS_JSON_RESPONSE_MAX * 4];
@@ -525,7 +526,6 @@ static void decode(FILE *fpin, FILE*fpout)
     policy.json = json;
     policy.scaled = scaled;
 
-    gps_context_init(&context, "gpsdecode");
     gpsd_time_init(&context, time(NULL));
     context.readonly = true;
     gpsd_init(&session, &context, NULL);
@@ -589,11 +589,9 @@ static void encode(FILE *fpin, FILE *fpout)
     struct policy_t policy;
     struct gps_device_t session;
     int lineno = 0;
-    struct gps_context_t context;
 
     memset(&policy, '\0', sizeof(policy));
     memset(&session, '\0', sizeof(session));
-    memset(&context, '\0', sizeof(context));
     session.context = &context;
     context.errout.debug = 0;
     context.errout.label = "gpsdecode";
@@ -632,6 +630,8 @@ int main(int argc, char **argv)
     int c;
     enum
     { doencode, dodecode } mode = dodecode;
+
+    gps_context_init(&context, "gpsdecode");
 
     while ((c = getopt(argc, argv, "cdejpst:uvVD:")) != EOF) {
 	switch (c) {
@@ -676,7 +676,7 @@ int main(int argc, char **argv)
 	    break;
 
 	case 'D':
-	    verbose = atoi(optarg);
+	    context.errout.debug = verbose = atoi(optarg);
 #if defined(CLIENTDEBUG_ENABLE) && defined(SOCKET_EXPORT_ENABLE)
 	    json_enable_debug(verbose - 2, stderr);
 #endif
